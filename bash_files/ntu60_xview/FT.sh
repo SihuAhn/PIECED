@@ -1,0 +1,37 @@
+python3 trainer/main_continual.py \
+    --dataset ntu60 \
+    --data_dir ./data/ntu60/xview \
+    --split_strategy class \
+    --pooling_mode part \
+    --task_split_key NTU60_xview \
+    --encoder stgcn \
+    --hidden_channels 64 \
+    --dropout 0.0 \
+    --max_epochs 500 \
+    --num_tasks 5 \
+    --task_idx 0 \
+    --gpus 0 \
+    --precision 16 \
+    --optimizer sgd \
+    --lars \
+    --grad_clip_lars \
+    --eta_lars 0.02 \
+    --exclude_bias_n_norm \
+    --scheduler warmup_cosine \
+    --lr 0.1 \
+    --classifier_lr 0.01 \
+    --weight_decay 1e-4 \
+    --batch_size 128 \
+    --num_workers 4 \
+    --name FT \
+    --project PIECED_ntu60_xview \
+    --wandb \
+    --save_checkpoint \
+    --method byol \
+    --output_dim 256 \
+    --proj_hidden_dim 4096 \
+    --base_tau_momentum 0.99 \
+    --final_tau_momentum 1.0 \
+    --momentum_classifier \
+    --seed 5 \
+    --attention_mode transformer

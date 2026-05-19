@@ -1,0 +1,25 @@
+# Datasets (large binary, kept outside the repo)
+data/
+
+# Run artifacts
+exp/
+wandb/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Environments
+.env
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
