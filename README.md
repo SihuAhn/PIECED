@@ -1,7 +1,7 @@
 # PIECED — Part-Aware Self-Distillation for Continual Skeleton Representation Learning
 
 Minimal training code for the part-transformer-distillation variant of PIECED on
-NTU60 (XSub / XView), released alongside the paper.
+NTU60, released alongside the paper.
 
 ## Layout
 
