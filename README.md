@@ -46,6 +46,11 @@ root and inject `--data_dir` / env vars into the bash scripts. The defaults at
 the top of each launcher target NTU60 XSub; edit `data_name` / `training_model`
 to switch, or override on the CLI.
 
+> **Note**: `bash_files/` is `.gitignored` (it contains user-specific values
+> like `--entity`, GPU id, and per-run `--pretrained_model` paths). Create the
+> scripts locally before running the launchers. The exact arguments used in the
+> paper are shown below.
+
 ### Pre-training (`job_launcher.py`)
 
 ```bash
@@ -53,7 +58,6 @@ to switch, or override on the CLI.
 python3 job_launcher.py
 
 # Tasks 1-4 — PIECED continual pre-training
-# (edit --pretrained_model in bash_files/ntu60_xsub/PIECED.sh first)
 python3 job_launcher.py --script bash_files/ntu60_xsub/PIECED.sh
 
 # NTU60 XView side
@@ -63,9 +67,19 @@ python3 job_launcher.py \
     --data_dir ./data/ntu60/xview
 ```
 
-Each task's checkpoint is logged at the end of its run (e.g.
-`exp/ntu60_xsub/.../FT-task0-ep=499-<hash>.ckpt`). Use that path for
-`--pretrained_model` in `PIECED.sh` to chain into tasks 1-4.
+**Chaining FT → PIECED**: each task's checkpoint is logged at the end of its
+run, e.g. `exp/ntu60_xsub/<timestamp>-FT/<run_hash>/FT-task0-ep=499-<run_hash>.ckpt`.
+Before running `PIECED.sh`, open the script and set `--pretrained_model` to
+the **task-0 FT checkpoint path** produced above (do not leave `<run_id>` /
+`<hash>` placeholders — `<` and `>` are shell redirection operators and will
+fail with `cannot open run_id`). Example:
+
+```bash
+--pretrained_model exp/ntu60_xsub/2026_05_19_07_36_31-FT/b3h5vezf/FT-task0-ep=499-b3h5vezf.ckpt \
+```
+
+`main_continual.py` then loops tasks 1 → 4, chaining each task's checkpoint
+into the next automatically.
 
 ### Semi-supervised linear evaluation (`job_semi.py`)
 

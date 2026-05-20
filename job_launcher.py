@@ -20,7 +20,7 @@ start_time = datetime.now()
 
 # Only these combos exist under pieced/bash_files right now.
 data_name = "ntu60_xsub"   # "ntu60_xsub", "ntu60_xview"
-training_model = "FT"      # "FT", "PIECED"
+training_model = "PIECED"      # "FT", "PIECED"
 
 # Map data_name -> dataset folder under DATA_ROOT
 _dataset, _split = data_name.split("_", 1)        # e.g. "ntu60", "xsub"
