@@ -8,7 +8,7 @@ from datetime import datetime
 
 from trainer.main_continual import str_to_dict
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '4'
+os.environ["CUDA_VISIBLE_DEVICES"] = '5'
 
 # Run with pieced/ as the working directory so that `trainer/main_continual.py` resolves.
 PIECED_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -19,7 +19,7 @@ DATA_ROOT = os.path.join(PIECED_ROOT, "data")
 start_time = datetime.now()
 
 # Only these combos exist under pieced/bash_files right now.
-data_name = "ntu60_xsub"   # "ntu60_xsub", "ntu60_xview"
+data_name = "ntu60_xview"   # "ntu60_xsub", "ntu60_xview"
 training_model = "PIECED"      # "FT", "PIECED"
 
 # Map data_name -> dataset folder under DATA_ROOT
