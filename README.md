@@ -40,6 +40,8 @@ NTU60 skeletons live under `./data/ntu60/xsub` and `./data/ntu60/xview`.
 Each split directory contains `train_data_joint.npy`, `train_label.pkl`,
 `val_data_joint.npy`, `val_label.pkl`.
 
+The datasets used in this study are publicly available: NTU RGB+D 60 and NTU RGB+D 120 at https://rose1.ntu.edu.sg/dataset/actionRecognition/, and PKU-MMD at https://struct002.github.io/PKUMMD/.
+
 ## Quick start
 
 The two Python launchers (`job_launcher.py`, `job_semi.py`) `chdir` to the repo
