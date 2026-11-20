@@ -8,7 +8,7 @@ from datetime import datetime
 
 from trainer.main_continual import str_to_dict
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '5'
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
 
 # Run with pieced/ as the working directory so that `trainer/main_continual.py` resolves.
 PIECED_ROOT = os.path.dirname(os.path.abspath(__file__))
