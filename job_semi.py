@@ -21,8 +21,7 @@ os.chdir(PIECED_ROOT)
 DATA_ROOT = os.path.join(PIECED_ROOT, "data")
 
 # Defaults — edit here or override on the CLI.
-data_name = "ntu60_xsub"       # "ntu60_xsub", "ntu60_xview"
-training_model = "PIECED"      # "FT", "PIECED"
+data_name = "ntu60_xview"      # <dataset>_<split>, e.g. "ntu120_xset" or "pkuv2_xsub"
 DEFAULT_GPU = "0"
 DEFAULT_RATIOS = [1.0]         # e.g. [0.01, 0.1, 1.0]
 

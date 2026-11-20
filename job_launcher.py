@@ -18,8 +18,8 @@ DATA_ROOT = os.path.join(PIECED_ROOT, "data")
 
 start_time = datetime.now()
 
-# Only these combos exist under pieced/bash_files right now.
-data_name = "ntu60_xview"   # "ntu60_xsub", "ntu60_xview"
+# Defaults; override on the command line with --script and --data_dir.
+data_name = "ntu60_xview"   # <dataset>_<split>, e.g. "ntu120_xset" or "pkuv2_xsub"
 training_model = "PIECED"      # "FT", "PIECED"
 
 # Map data_name -> dataset folder under DATA_ROOT
@@ -56,7 +56,7 @@ assert (
 ), "Please remove the --checkpoint_dir argument, it will be added automatically"
 
 # Replace the --data_dir value baked into the bash script with the absolute path
-# that points into HiSDi_new/data.
+# under ./data.
 joined = " ".join(command)
 joined = re.sub(r"--data_dir\s+\S+", f"--data_dir {args.data_dir}", joined)
 command = joined.split()
