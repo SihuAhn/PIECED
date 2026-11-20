@@ -21,6 +21,18 @@ def base_distill_wrapper(Method=object):
             # by byol.py's __init__
             self.frozen_encoder = deepcopy(self.encoder)
             self.frozen_projector = deepcopy(self.projector)
+            # The frozen old network is a copy of the entire current network,
+            # including the part transformer.
+            self.frozen_part_attention = self._copy_part_attention()
+
+        def _copy_part_attention(self):
+            """Returns a frozen copy of the part transformer (None if it is not used)."""
+            if self.pooling_mode != "part" or getattr(self, "part_attention", None) is None:
+                return None
+            frozen = deepcopy(self.part_attention)
+            for pg in frozen.parameters():
+                pg.requires_grad = False
+            return frozen
 
         def on_train_start(self):
             """Called at the beginning of training."""
@@ -30,6 +42,7 @@ def base_distill_wrapper(Method=object):
             if self.current_task_idx > 0:
                 self.frozen_encoder = deepcopy(self.encoder)
                 self.frozen_projector = deepcopy(self.projector)
+                self.frozen_part_attention = self._copy_part_attention()
 
                 # Freeze all parameters in the frozen models
                 for pg in self.frozen_encoder.parameters():
@@ -59,8 +72,20 @@ def base_distill_wrapper(Method=object):
             elif self.pooling_mode == "part":
                 # feats: List[Tensor] (length 5)
                 # self.frozen_projector: nn.ModuleList (length 5)
+                part_inputs = feats
+                if self.frozen_part_attention is not None:
+                    # Same path as the current network:
+                    # part-level tokens -> part transformer -> part-wise projector
+                    self.frozen_part_attention.eval()
+                    feats_stack = torch.stack(feats, dim=1)  # (B, P, C)
+                    if self.attention_mode == "transformer":
+                        refined = self.frozen_part_attention(feats_stack)
+                    else:  # 'attention' (nn.MultiheadAttention)
+                        refined, _ = self.frozen_part_attention(feats_stack, feats_stack, feats_stack)
+                    part_inputs = [refined[:, i, :] for i in range(self.num_parts)]
+
                 frozen_z = [
-                    self.frozen_projector[i](feats[i]) for i in range(self.num_parts)
+                    self.frozen_projector[i](part_inputs[i]) for i in range(self.num_parts)
                 ]
                 return feats, frozen_z # Return List, List
 

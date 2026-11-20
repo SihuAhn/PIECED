@@ -2,7 +2,7 @@
 """
 Semi-supervised linear evaluation launcher for PIECED.
 
-Wraps `bash_files/{data_name}/semi_{training_model}.sh` and injects:
+Wraps `bash_files/eval.sh` and injects:
   - SEMI_RATIO       (label fraction, e.g. 0.01 / 0.1 / 1.0)
   - CHECKPOINT_DIR   (output dir for the run)
   - DATA_DIR         (local ./data/<dataset>/<split>)
@@ -63,7 +63,7 @@ def run_semi_task(ratio, base_output_dir, gpu_id, script_path, data_dir):
 
 def main():
     _dataset, _split = data_name.split("_", 1)
-    default_script = f"bash_files/{data_name}/semi_{training_model}.sh"
+    default_script = "bash_files/eval.sh"
     default_data_dir = os.path.join(DATA_ROOT, _dataset, _split)
 
     parser = argparse.ArgumentParser(description="Run Semi-Supervised Linear Eval for PIECED")

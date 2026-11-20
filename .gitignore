@@ -5,9 +5,6 @@ data/
 exp/
 wandb/
 
-# Per-user bash configs (contain wandb entity + local ckpt paths)
-bash_files/
-
 # Python
 __pycache__/
 *.py[cod]

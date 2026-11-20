@@ -1,6 +1,6 @@
 # PIECED: Part-Aware Inter-Joint Exemplar-free Continual Self-Supervised Encoding and Distillation for Skeleton-Based Action Recognition
 
-Training code for the part-transformer-distillation variant of PIECED, released alongside the paper.
+Training and evaluation code for PIECED, released alongside the paper.
 
 <img width="2592" height="1609" alt="figure1" src="https://github.com/user-attachments/assets/f9a9d902-6f21-4bd3-9e0c-7ea16114d2c4" />
 
@@ -11,7 +11,7 @@ PIECED/
 ├── pieced/                # Python package (methods, distillers, backbones, …)
 │   ├── args/              # Argument parsing
 │   ├── backbone/          # ST-GCN + part / transformer pooling
-│   ├── distillers/        # base, predictive (PRSD)
+│   ├── distillers/        # base (frozen old network), predictive (part-level distillation)
 │   ├── losses/            # BYOL loss
 │   ├── methods/           # BaseModel, BYOL, LinearModel
 │   └── utils/             # Data loaders, checkpointer, LARS, KNN, task_orders
@@ -19,9 +19,9 @@ PIECED/
 │   ├── main_continual.py  # Multi-task loop driver (calls main_pretrain.py)
 │   ├── main_pretrain.py   # Per-task pre-training
 │   └── main_linear.py     # Linear-probe evaluation
-├── bash_files/
-│   ├── ntu60_xsub/{FT.sh, PIECED.sh, semi_FT.sh, semi_PIECED.sh}
-│   └── ntu60_xview/{FT.sh, PIECED.sh, semi_FT.sh, semi_PIECED.sh}
+├── bash_files/{FT.sh, PIECED.sh, eval.sh}   # Configuration used in the paper (NTU RGB+D 60 xview)
+├── scripts/
+│   └── compute_cl_metrics.py   # AA, F, and LA from accuracy matrices
 ├── task_orders.json       # Class-to-task assignments (NTU60/120, PKU-MMD)
 ├── job_launcher.py        # Pre-training launcher
 └── job_semi.py            # Semi-supervised linear-eval launcher
@@ -36,82 +36,100 @@ PIECED/
 
 ## Data
 
-NTU60 skeletons live under `./data/ntu60/xsub` and `./data/ntu60/xview`.
+Skeleton data live under `./data/<dataset>/<split>` (e.g. `./data/ntu60/xview`).
 Each split directory contains `train_data_joint.npy`, `train_label.pkl`,
 `val_data_joint.npy`, `val_label.pkl`.
 
 The datasets used in this study are publicly available: NTU RGB+D 60 and NTU RGB+D 120 at https://rose1.ntu.edu.sg/dataset/actionRecognition/, and PKU-MMD at https://struct002.github.io/PKUMMD/.
 
+## Configuration
+
+[`bash_files/`](./bash_files) holds the configuration used in the paper,
+shown for NTU RGB+D 60 xview:
+
+| Script | Stage |
+|---|---|
+| `FT.sh` | Task 0 (no distillation). Its task-0 checkpoint is the starting point of PIECED. |
+| `PIECED.sh` | Tasks 1-4 with part-level distillation (`--distiller predictive --distill_lamb 1.0`). |
+| `eval.sh` | Linear evaluation of the checkpoint saved after each task. |
+
+The same hyperparameters are used for all six evaluation splits. To run another split, change
+only the following arguments in the three scripts:
+
+| Evaluation split | `--dataset` | `--data_dir` | `--task_split_key` | `--num_tasks` |
+|---|---|---|---|---|
+| NTU RGB+D 60 xview | `ntu60` | `./data/ntu60/xview` | `NTU60_xview` | 5 |
+| NTU RGB+D 60 xsub | `ntu60` | `./data/ntu60/xsub` | `NTU60_xsub` | 5 |
+| NTU RGB+D 120 xset | `ntu120` | `./data/ntu120/xset` | `NTU120_xset` | 10 |
+| NTU RGB+D 120 xsub | `ntu120` | `./data/ntu120/xsub` | `NTU120_xsub` | 10 |
+| PKU-MMD phase 1 | `pkuv1` | `./data/pkuv1/xsub` | `PKU_phase1_xsub` | 5 |
+| PKU-MMD phase 2 | `pkuv2` | `./data/pkuv2/xsub` | `PKU_phase2_xsub` | 5 |
+
+**Random seeds.** The results in the paper are averaged over five seeds: 5, 15, 25, 35, and 45
+(`--seed`). The class-task assignment is fixed and does not depend on the seed.
+
+**Frozen old network.** From task 1 onward, the old network is a frozen copy of the entire
+current network at the end of the previous task: the ST-GCN backbone, the part transformer, and
+the part-wise projection heads ([`pieced/distillers/base.py`](./pieced/distillers/base.py)).
+
 ## Quick start
 
-The two Python launchers (`job_launcher.py`, `job_semi.py`) `chdir` to the repo
-root and inject `--data_dir` / env vars into the bash scripts. The defaults at
-the top of each launcher target NTU60 XSub; edit `data_name` / `training_model`
-to switch, or override on the CLI.
-
-> **Note**: `bash_files/` is `.gitignored` (it contains user-specific values
-> like `--entity`, GPU id, and per-run `--pretrained_model` paths). Create the
-> scripts locally before running the launchers. The exact arguments used in the
-> paper are shown below.
+`job_launcher.py` and `job_semi.py` `chdir` to the repo root and inject `--data_dir` / env vars
+into the bash scripts.
 
 ### Pre-training (`job_launcher.py`)
 
 ```bash
-# Task 0 — Fine-tuning baseline (NTU60 XSub, default)
-python3 job_launcher.py
+# Task 0
+python3 job_launcher.py --script bash_files/FT.sh
 
-# Tasks 1-4 — PIECED continual pre-training
-python3 job_launcher.py --script bash_files/ntu60_xsub/PIECED.sh
-
-# NTU60 XView side
-python3 job_launcher.py \
-    --script bash_files/ntu60_xview/FT.sh \
-    --base_experiment_dir ./exp/ntu60_xview \
-    --data_dir ./data/ntu60/xview
+# Tasks 1-4 with PIECED
+python3 job_launcher.py --script bash_files/PIECED.sh
 ```
 
-**Chaining FT → PIECED**: each task's checkpoint is logged at the end of its
-run, e.g. `exp/ntu60_xsub/<timestamp>-FT/<run_hash>/FT-task0-ep=499-<run_hash>.ckpt`.
-Before running `PIECED.sh`, open the script and set `--pretrained_model` to
-the **task-0 FT checkpoint path** produced above (do not leave `<run_id>` /
-`<hash>` placeholders — `<` and `>` are shell redirection operators and will
-fail with `cannot open run_id`). Example:
+Each task's checkpoint is saved at the end of its run under `exp/ntu60_xview/<timestamp>-<name>/`.
+Before running `PIECED.sh`, set `--pretrained_model` in the script to the task-0 checkpoint
+produced by `FT.sh`. `main_continual.py` then loops over tasks 1 to 4, passing each task's
+checkpoint to the next automatically.
+
+To run another split, also pass `--base_experiment_dir` and `--data_dir`, for example
+`--base_experiment_dir ./exp/ntu60_xsub --data_dir ./data/ntu60/xsub`.
+
+### Linear evaluation (`job_semi.py`)
+
+Set the five checkpoint paths (`CKPTS`) in `bash_files/eval.sh`, then run:
 
 ```bash
---pretrained_model exp/ntu60_xsub/2026_05_19_07_36_31-FT/b3h5vezf/FT-task0-ep=499-b3h5vezf.ckpt \
+# 100% of the labels (protocol used for AA, F, and LA)
+python3 job_semi.py --script bash_files/eval.sh --data_dir ./data/ntu60/xview
+
+# Label-efficiency sweep
+python3 job_semi.py --script bash_files/eval.sh --data_dir ./data/ntu60/xview \
+    --ratios 0.01 0.1 1.0
 ```
 
-`main_continual.py` then loops tasks 1 → 4, chaining each task's checkpoint
-into the next automatically.
+After each task, the backbone and the part transformer are frozen, and a linear classifier is
+trained on the labeled training data of all classes. The accuracy is reported for the test
+samples of each task as `val_acc1_task{n}` (0-indexed task, value in [0, 1]).
 
-### Semi-supervised linear evaluation (`job_semi.py`)
+## Metrics
+
+[`scripts/compute_cl_metrics.py`](./scripts/compute_cl_metrics.py) computes the average accuracy
+(AA), forgetting (F), and learning accuracy (LA) defined in the paper from accuracy matrices.
+Each CSV file holds the N x N matrix of one seed without a header, where row n is the evaluated
+task, column m is the training stage (after training up to task m), and the entry is a_{n,m} in
+percent, that is, 100 x `val_acc1_task{n-1}` at the last epoch of the linear evaluation of the
+task-m checkpoint. Cells with m < n are not used and may be left empty.
 
 ```bash
-# Default — 100% labels, PIECED checkpoint on NTU60 XSub
-# (edit CKPT_PATH in bash_files/ntu60_xsub/semi_PIECED.sh first)
-python3 job_semi.py
-
-# Sweep label ratios
-python3 job_semi.py --ratios 0.01 0.1 1.0
-
-# FT checkpoint instead of PIECED
-python3 job_semi.py --script bash_files/ntu60_xsub/semi_FT.sh
-
-# NTU60 XView, custom GPU
-python3 job_semi.py \
-    --script bash_files/ntu60_xview/semi_PIECED.sh \
-    --data_dir ./data/ntu60/xview \
-    --gpu 0
+python3 scripts/compute_cl_metrics.py seed5.csv seed15.csv seed25.csv seed35.csv seed45.csv
 ```
-
-`job_semi.py` injects `SEMI_RATIO`, `CHECKPOINT_DIR`, and `DATA_DIR` env vars
-into the bash script and runs each ratio sequentially.
 
 ## Class-task assignments
 
 [`task_orders.json`](./task_orders.json) holds the exact class splits used in
 the paper for `NTU60_x{sub,view}`, `NTU120_x{sub,set}`, `PKU_phase{1,2}_xsub`.
-The bash scripts pass `--task_split_key NTU60_xsub` (etc.) and
+The bash scripts pass `--task_split_key NTU60_xview` (etc.) and
 `trainer/main_pretrain.py` / `main_linear.py` load the corresponding splits
 through [`pieced/utils/task_orders.py`](./pieced/utils/task_orders.py). Leaving
 `--task_split_key` unset falls back to the legacy `randperm(seed=5)` path.
@@ -121,9 +139,9 @@ through [`pieced/utils/task_orders.py`](./pieced/utils/task_orders.py). Leaving
 - `--pooling_mode part` — part-aware pooling
 - `--attention_mode transformer` — transformer attention head
 - `--method byol` — BYOL backbone objective
-- `--distiller predictive` — PIECED / PRSD predictive distillation
+- `--distiller predictive` — part-level distillation of PIECED
 - `--distill_lamb 1.0` — distillation loss weight
 - `--num_tasks 5 --split_strategy class` — class-incremental 5-task protocol
-- `--task_split_key NTU60_xsub` — load class splits from `task_orders.json`
-- `--wandb --project PIECED_ntu60_xsub` — enable W&B logging (entity uses your
+- `--task_split_key NTU60_xview` — load class splits from `task_orders.json`
+- `--wandb --project PIECED_ntu60_xview` — enable W&B logging (entity uses your
   default account; pass `--entity <name>` to override)

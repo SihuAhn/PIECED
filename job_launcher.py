@@ -27,7 +27,7 @@ _dataset, _split = data_name.split("_", 1)        # e.g. "ntu60", "xsub"
 data_dir_override = os.path.join(DATA_ROOT, _dataset, _split)
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--script", type=str, default=f'bash_files/{data_name}/{training_model}.sh')
+parser.add_argument("--script", type=str, default=f'bash_files/{training_model}.sh')
 parser.add_argument("--experiment_dir", type=str, default=None)
 parser.add_argument("--base_experiment_dir", type=str, default=f"./exp/{data_name}")
 parser.add_argument("--data_dir", type=str, default=data_dir_override,
