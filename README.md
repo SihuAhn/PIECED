@@ -45,11 +45,11 @@ The datasets used in this study are publicly available: NTU RGB+D 60 and NTU RGB
 ## Configuration
 
 [`bash_files/`](./bash_files) holds the configuration used in the paper,
-shown for NTU RGB+D 60 xview:
+shown for NTU RGB+D 60 xview. Tasks are 0-indexed in the code, so task 0 here is task 1 in the paper.
 
 | Script | Stage |
 |---|---|
-| `FT.sh` | Task 0 (no distillation). Its task-0 checkpoint is the starting point of PIECED. |
+| `FT.sh` | Sequential training without distillation. The checkpoint saved after task 0 is the starting point of PIECED (add `--end_task_idx 1` to stop after task 0). |
 | `PIECED.sh` | Tasks 1-4 with part-level distillation (`--distiller predictive --distill_lamb 1.0`). |
 | `eval.sh` | Linear evaluation of the checkpoint saved after each task. |
 
@@ -80,7 +80,7 @@ into the bash scripts.
 ### Pre-training (`job_launcher.py`)
 
 ```bash
-# Task 0
+# Task 0 (training without distillation)
 python3 job_launcher.py --script bash_files/FT.sh
 
 # Tasks 1-4 with PIECED
