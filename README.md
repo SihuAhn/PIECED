@@ -2,7 +2,7 @@
 
 Training and evaluation code for PIECED, released alongside the paper.
 
-<img width="2592" height="1609" alt="figure1" src="https://github.com/user-attachments/assets/f9a9d902-6f21-4bd3-9e0c-7ea16114d2c4" />
+<img width="2304" height="1323" alt="image" src="https://github.com/user-attachments/assets/5da6921b-bafa-47d2-9b03-ea4cddb9b0db" />
 
 ## Layout
 
