@@ -1,6 +1,4 @@
 import argparse
-import os
-import numpy as np
 from typing import Any, Dict, List, Sequence, Tuple, Union
 
 import torch
@@ -18,7 +16,7 @@ class BYOL(BaseMomentumModel):
         pred_hidden_dim: int,
         **kwargs,
     ):
-        """Implements BYOL with Configurable Self-Attention, Distillation, and Replay Support."""
+        """Implements BYOL with part-level pooling and a part transformer."""
         super().__init__(**kwargs)
 
         self.pooling_mode = self.hparams.pooling_mode
@@ -30,18 +28,6 @@ class BYOL(BaseMomentumModel):
         self.pred_hidden_dim = pred_hidden_dim
         real_feature_dim = kwargs.get('hidden_dim', 256) 
         
-        # -------------------------------------------------------------------------
-        # [Replay] 메모리 버퍼 초기화
-        # -------------------------------------------------------------------------
-        self.use_replay = getattr(self.hparams, "replay_method", "None") in ["ER", "LUMP", "CroMo"]
-        
-        if self.use_replay:
-            self.replay_buffer_v1 = []
-            self.replay_buffer_v2 = []
-            self.replay_past_v1 = None
-            self.replay_past_v2 = None
-            self._replay_saved = False
-
         # Classifier 설정
         if self.pooling_mode == 'part':
             clf_input_dim = real_feature_dim * self.num_parts
@@ -122,12 +108,6 @@ class BYOL(BaseMomentumModel):
         parser.add_argument("--pred_hidden_dim", type=int, default=512)
         parser.add_argument("--attention_mode", type=str, default="transformer", 
                             choices=["None", "attention", "transformer"])
-        
-        parser.add_argument("--replay_method", type=str, default="None", 
-                            choices=["None", "ER", "LUMP", "CroMo"],
-                            help="None, ER, LUMP, CroMo")
-        parser.add_argument("--replay_mem_size", type=int, default=500)
-        parser.add_argument("--mixup_alpha", type=float, default=0.2)
         return parent_parser
 
     @property
@@ -177,137 +157,11 @@ class BYOL(BaseMomentumModel):
             
             return {**out, "z": z_avg, "p": p_avg, "z_parts": z_parts, "p_parts": p_parts}
 
-    # -------------------------------------------------------------------------
-    # [Replay] 버퍼 Load (Task 1 경로 역추적 로직 포함)
-    # -------------------------------------------------------------------------
-    def on_train_start(self):
-        super().on_train_start()
-        
-        current_idx = getattr(self, "current_task_idx", 0)
-        
-        if self.use_replay and current_idx > 0:
-            load_idx = current_idx - 1 
-            buffer_path = None
-            
-            # [수정] Task 1일 경우, pretrained_model이 위치한 LUMP 폴더에서 buffer_0.pt를 우선 탐색
-            if current_idx == 1 and getattr(self.hparams, 'pretrained_model', None):
-                pt_dir = os.path.dirname(self.hparams.pretrained_model) # e.g., .../wofv8nh6/
-                pt_parent_dir = os.path.dirname(pt_dir)                 # e.g., .../2026_02_25_06_01_15-LUMP/
-                
-                # buffer_0.pt가 저장되어 있을 만한 유력한 후보지들
-                candidates = [
-                    os.path.join(pt_dir, f"buffer_{load_idx}.pt"),
-                    os.path.join(pt_parent_dir, f"buffer_{load_idx}.pt"),
-                    os.path.join(self.hparams.checkpoint_dir, f"buffer_{load_idx}.pt")
-                ]
-                
-                for p in candidates:
-                    if os.path.exists(p):
-                        buffer_path = p
-                        break
-            
-            # Task 2 이상이거나 pretrained_model에서 못 찾았을 경우 기본 폴더(CroMo 진행 폴더) 탐색
-            if buffer_path is None:
-                buffer_path = os.path.join(self.hparams.checkpoint_dir, f"buffer_{load_idx}.pt")
-                
-            # 최종 Load
-            if os.path.exists(buffer_path):
-                buffers = torch.load(buffer_path)
-                self.replay_past_v1 = buffers['v1']
-                self.replay_past_v2 = buffers['v2']
-                print(f"\n[*] Replay({self.hparams.replay_method}): Loaded buffer with {len(self.replay_past_v1)} samples from {buffer_path}")
-            else:
-                print(f"\n[!] Replay({self.hparams.replay_method}): Buffer file not found at {buffer_path} despite task_idx > 0!")
-
-    # -------------------------------------------------------------------------
-    # [Replay] 버퍼 Save
-    # -------------------------------------------------------------------------
-    def _save_replay_buffer(self):
-        if getattr(self, "_replay_saved", False): return
-        os.makedirs(self.hparams.checkpoint_dir, exist_ok=True)
-        
-        current_idx = getattr(self, "current_task_idx", 0)
-        buffer_path = os.path.join(self.hparams.checkpoint_dir, f"buffer_{current_idx}.pt")
-        
-        new_v1 = list(self.replay_past_v1) if self.replay_past_v1 is not None else []
-        new_v2 = list(self.replay_past_v2) if self.replay_past_v2 is not None else []
-        new_v1.extend(self.replay_buffer_v1)
-        new_v2.extend(self.replay_buffer_v2)
-        
-        torch.save({'v1': new_v1, 'v2': new_v2}, buffer_path)
-        print(f"\n[*] Replay({self.hparams.replay_method}): Saved buffer with {len(new_v1)} samples to {buffer_path}")
-        self._replay_saved = True
-
-    def on_train_epoch_end(self):
-        if hasattr(super(), "on_train_epoch_end"): super().on_train_epoch_end()
-        if self.use_replay and self.current_epoch == self.trainer.max_epochs - 1:
-            self._save_replay_buffer()
-
-    def on_train_end(self):
-        super().on_train_end()
-        if self.use_replay: self._save_replay_buffer()
-
     def training_step(self, batch: Sequence[Any], batch_idx: int) -> torch.Tensor:
-        # -------------------------------------------------------------------------
-        # [Replay] 데이터 증강 & Mixup
-        # -------------------------------------------------------------------------
-        if self.use_replay:
-            is_dict_batch = isinstance(batch, dict)
-            task_key = f"task{self.current_task_idx}" if hasattr(self, "current_task_idx") else "task0"
-            actual_batch = batch[task_key] if is_dict_batch else batch
-            
-            if len(actual_batch) == 3:
-                idx, views, target = actual_batch
-            else:
-                views, target = actual_batch
-                idx = None
-                
-            v1, v2 = views[0], views[1]
-            batch_size = v1.size(0)
-            
-            # 미래 Task를 위해 현재 데이터 원본 수집
-            if len(self.replay_buffer_v1) < self.hparams.replay_mem_size:
-                for i in range(batch_size):
-                    if len(self.replay_buffer_v1) < self.hparams.replay_mem_size:
-                        self.replay_buffer_v1.append(v1[i].detach().cpu())
-                        self.replay_buffer_v2.append(v2[i].detach().cpu())
-
-            # 과거 데이터가 있으면 Replay 적용
-            if self.replay_past_v1 is not None and len(self.replay_past_v1) > 0:
-                rand_idx = torch.randint(0, len(self.replay_past_v1), (batch_size,))
-                mem_v1 = torch.stack([self.replay_past_v1[i] for i in rand_idx]).to(v1.device)
-                mem_v2 = torch.stack([self.replay_past_v2[i] for i in rand_idx]).to(v2.device)
-
-                if self.hparams.replay_method == "ER":
-                    mask = torch.bernoulli(torch.full((batch_size,), 0.5)).to(v1.device)
-                    mask_shape = [-1] + [1] * (v1.dim() - 1)
-                    mask = mask.view(*mask_shape)
-                    v1 = v1 * mask + mem_v1 * (1.0 - mask)
-                    v2 = v2 * mask + mem_v2 * (1.0 - mask)
-
-                elif self.hparams.replay_method in ["LUMP", "CroMo"]:
-                    lam = float(np.random.beta(self.hparams.mixup_alpha, self.hparams.mixup_alpha))
-                    v1 = lam * v1 + (1.0 - lam) * mem_v1
-                    v2 = lam * v2 + (1.0 - lam) * mem_v2
-
-            if idx is not None:
-                actual_batch = (idx, [v1, v2], target)
-            else:
-                actual_batch = ([v1, v2], target)
-                
-            if is_dict_batch:
-                batch[task_key] = actual_batch
-            else:
-                batch = actual_batch
-        
-        # -------------------------------------------------------------------------
-        # 원본 BYOL 로직 진행
-        # -------------------------------------------------------------------------
         out = super().training_step(batch, batch_idx)
         
         total_neg_cos_sim = 0
         all_z = [] 
-        cromo_feature_loss = torch.tensor(0.0, device=self.device) 
 
         if self.pooling_mode == 'whole':
             feats1, feats2 = out["feats"]
@@ -322,8 +176,6 @@ class BYOL(BaseMomentumModel):
             total_neg_cos_sim += byol_loss_func(p1, z2_momentum) + byol_loss_func(p2, z1_momentum)
             all_z.extend([z1, z2])
             out.update({"z": [z1, z2]})
-            
-            z_avg_current = (z1 + z2) / 2.0
 
         elif self.pooling_mode == 'part':
             feats1_list, feats2_list = out["feats"]
@@ -374,30 +226,6 @@ class BYOL(BaseMomentumModel):
             all_part_losses_tensor = torch.stack(ssl_part_losses, dim=0).transpose(0, 1) # (B, P)
             total_neg_cos_sim += all_part_losses_tensor.sum()
             out.update({"z": [z1_parts, z2_parts]})
-            
-            z_avg_current = torch.stack(z1_parts, dim=0).mean(dim=0)
-
-        # -------------------------------------------------------------------------
-        # 🟢 CroMo: Feature Mixup (Distillation)
-        # -------------------------------------------------------------------------
-        if self.hparams.replay_method == "CroMo" and getattr(self, "current_task_idx", 0) > 0:
-            old_model = getattr(self, "distiller", getattr(self, "teacher", None))
-            
-            if old_model is not None:
-                old_model.eval()
-                with torch.no_grad():
-                    old_out = old_model(v1)
-                    if isinstance(old_out, dict) and "z" in old_out:
-                        old_z = old_out["z"]
-                    else:
-                        old_z = old_out 
-                        
-                if isinstance(old_z, list):
-                    old_z_avg = torch.stack(old_z, dim=0).mean(dim=0)
-                else:
-                    old_z_avg = old_z
-                    
-                cromo_feature_loss = byol_loss_func(z_avg_current, old_z_avg)
 
         # Calculate STD
         if len(all_z) > 0:
@@ -409,10 +237,8 @@ class BYOL(BaseMomentumModel):
             "train_neg_cos_sim": total_neg_cos_sim,
             "train_z_std": z_std,
         }
-        if cromo_feature_loss > 0:
-            metrics["train_cromo_loss"] = cromo_feature_loss
 
         self.log_dict(metrics, on_epoch=True, sync_dist=True)
-        out.update({"loss": out["loss"] + total_neg_cos_sim + cromo_feature_loss})
+        out.update({"loss": out["loss"] + total_neg_cos_sim})
         
         return out
